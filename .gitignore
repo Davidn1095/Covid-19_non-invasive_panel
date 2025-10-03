@@ -1,0 +1,13 @@
+.Rhistory
+.Rproj.user/
+.RData
+.Renviron
+renv/library/
+data/
+figures/
+figs_export/
+*.csv
+*.xlsx
+*.rds
+*.rda
+cascade project/
