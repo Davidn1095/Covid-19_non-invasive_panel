@@ -5,17 +5,17 @@
 # TP TN FP FN added as rows with 95% CIs
 # Split boundary = 2020-04-15
 # Tuned on MCC in CV, τ chosen by MCC with BACC then median-p tie-break
-# Calibration = Platt-ridge fitted on train CV-OOF, applied external
-# Inner CV uses time-blocked 5 folds, repeats disabled under time blocks
+# Calibration = Platt ridge fitted on train CV OOF, applied external
+# Inner CV uses time blocked 5 folds, repeats disabled under time blocks
 # 'group' kept for cohort filtering then ignored for modeling
 # Engineered features: NLR MLR SIRI NMR CAR CLR PNI DLR
-# ENN + BLSMOTE applied within CV for all algorithms, optional oversample refit on full train
+# ENN plus BLSMOTE applied within CV for all algorithms, optional oversample refit on full train
 # ENN removals are logged per algorithm and feature set
 # Leakage fix: WHO score dropped for Hospital_ID
-# Recipes: NA indicators and Yeo-Johnson for non-tree models
+# Recipes: NA indicators and Yeo-Johnson for non tree models
 # Wider tuning for LR with ridge to lasso path
 # C4.5 uses Laplace smoothing with robust probability columns
-# Adds: Cascade model (Triage + Complete when in doubt) with band tuning on TRIAGE OOF
+# Adds: Cascade model, triage then complete when in doubt, with band tuning on TRIAGE OOF
 # ===============================================================
 
 suppressPackageStartupMessages({
@@ -52,18 +52,17 @@ cfg <- list(
   use_defaults         = FALSE,
   lr_solver            = "ridge",
   cv_blocked_by_time   = TRUE,
-  adasyn_refit_on_train= TRUE,  # kept as the refit flag
+  adasyn_refit_on_train= TRUE,
   sampler              = "blsmote",  # "blsmote" or "adasyn"
-  
   # ---- Cascade config ----
   cascade = list(
-    enabled         = TRUE,       # set FALSE to disable quickly
-    tune_band       = TRUE,       # tune t_low/t_high on TRIAGE OOF
-    t_low           = 0.20,       # used if tune_band = FALSE or tuning not feasible
+    enabled         = TRUE,
+    tune_band       = TRUE,
+    t_low           = 0.20,
     t_high          = 0.80,
     grid_tl         = seq(0.05, 0.45, by = 0.05),
     grid_th         = seq(0.55, 0.95, by = 0.05),
-    max_defer       = 1.00        # cap on % deferred (1.00 = no cap)
+    max_defer       = 1.00
   )
 )
 
@@ -78,7 +77,7 @@ feat_full <- c(
   "NLR","MLR","SIRI","NMR","CAR","CLR","PNI","DLR"
 )
 
-# ---- leak-free admission modeling: drop WHO score when predicting Hospital_ID ----
+# ---- leak free admission modeling: drop WHO score when predicting Hospital_ID ----
 if (identical(cfg$outcome, "Hospital_ID")) {
   feat_triage <- setdiff(feat_triage, "WHO_score_admission_mod")
   feat_full   <- setdiff(feat_full,   "WHO_score_admission_mod")
@@ -89,7 +88,7 @@ if (identical(cfg$outcome, "Hospital_ID")) {
 
 # ---------------- order ----------------
 metric_order <- c("MCC","AUC-ROC","F1-score","Accuracy","Precision","Sensitivity","Specificity")
-algo_order   <- c("C4.5","k-NN","SVM","RF","LR")  # XGB removed
+algo_order   <- c("C4.5","k-NN","SVM","RF","LR")
 
 # ---------------- reproducibility ----------------
 RNGkind(kind = "L'Ecuyer-CMRG")
@@ -103,7 +102,6 @@ clip01 <- function(p, eps = 1e-6) pmin(pmax(p, eps), 1 - eps)
 effective_repeats <- function() if (isTRUE(cfg$cv_blocked_by_time)) 1 else (cfg$inner_repeats %||% 1)
 seed_for <- function(algo, set_label, base = cfg$seed_cv) base + sum(utf8ToInt(paste(algo, set_label, sep = "_")))
 
-# SAFE: always give a valid size to sample.int()
 make_caret_seeds <- function(num_resamples, num_tunes, base_seed) {
   num_tunes <- max(1L, as.integer(num_tunes %||% 1L))
   set.seed(base_seed)
@@ -188,7 +186,7 @@ enn_log_summary <- function() {
     ) %>% dplyr::arrange(Algorithm, Set)
 }
 
-# ---------------- data loader + cohort filter ----------------
+# ---------------- data loader plus cohort filter ----------------
 load_data <- function(path, sheet, outcome, keep_predictors) {
   if (!file.exists(path)) stop(sprintf("File not found: %s", path))
   df <- readxl::read_excel(path, sheet = sheet) %>% as.data.frame()
@@ -203,7 +201,6 @@ load_data <- function(path, sheet, outcome, keep_predictors) {
   if (!(outcome %in% names(df))) stop(sprintf("Outcome '%s' missing", outcome))
   df[[outcome]] <- to_YN(df[[outcome]])
   df <- enforce_y_levels(df, outcome)
-  
   if ("WHO_score_admission_mod" %in% names(df)) {
     if (!is.numeric(df$WHO_score_admission_mod)) {
       df$WHO_score_admission_mod <- as_num(df$WHO_score_admission_mod)
@@ -213,7 +210,6 @@ load_data <- function(path, sheet, outcome, keep_predictors) {
       df$WHO_score_admission_mod[idx_ctrl_na] <- 0
     }
   }
-  
   num_candidates <- c("Age","SpO2_admission","CRP","D_Dimer","albumin",
                       "monocyte_abs_number","monocytes_perc",
                       "lymphocyte_abs_number","lymphocytes_perc",
@@ -508,7 +504,7 @@ mccSummaryAdaptive <- function(data, lev = NULL, model = NULL) {
   c(MCC = as.numeric(br$mcc))
 }
 
-# ---------------- ENN + BLSMOTE sampler ----------------
+# ---------------- ENN plus BLSMOTE sampler ----------------
 apply_ENN <- function(df, yname = ".y", k = 3) {
   df[[yname]] <- factor(df[[yname]], levels = c(cfg$neg_label, cfg$pos_label))
   before_n <- nrow(df)
@@ -549,7 +545,7 @@ noise_blsmote_sampler <- function(x, y) {
   y <- factor(y, levels = c(cfg$neg_label, cfg$pos_label))
   if (length(unique(y)) < 2) return(list(x = x, y = y))
   df <- as.data.frame(x); df.y <- y
-  names(df)[names(df) == "。.y"] <- ".y"   # defensive fix for odd dot
+  names(df)[names(df) == "。.y"] <- ".y"
   if (!".y" %in% names(df)) df$.y <- y else df$.y <- df[[".y"]]
   df2 <- apply_ENN(df, ".y", k = 3)
   sm  <- try(UBL::BLSMOTE(.y ~ ., df2, C.perc = "balance", k = 5), silent = TRUE)
@@ -619,9 +615,7 @@ ensure_two_classes <- function(d, y) {
 
 train_inner <- function(dat_train, yvar, spec, inner_k, cv_idx, seed_base) {
   dat_train <- enforce_y_levels(dat_train, yvar)
-  
   is_j48_custom <- is.list(spec$method) && identical(spec$name, "C4.5")
-  
   rec <- if (is_j48_custom) {
     recipes::recipe(stats::as.formula(paste(yvar, "~ .")), data = dat_train) %>%
       step_impute_median(all_numeric_predictors()) %>%
@@ -632,7 +626,6 @@ train_inner <- function(dat_train, yvar, spec, inner_k, cv_idx, seed_base) {
   } else {
     make_recipe(dat_train, yvar, method = spec$method)
   }
-  
   num_tunes <- if (!is.null(spec$grid)) {
     nrow(spec$grid)
   } else if (!is.null(spec$tuneLength)) {
@@ -643,9 +636,7 @@ train_inner <- function(dat_train, yvar, spec, inner_k, cv_idx, seed_base) {
   } else {
     1L
   }
-  
   sampler_fun <- if (identical(cfg$sampler, "blsmote")) noise_blsmote_sampler else noise_adasyn_sampler
-  
   tr_ctrl <- caret::trainControl(
     method = if (isTRUE(cfg$cv_blocked_by_time) || effective_repeats() == 1) "cv" else "repeatedcv",
     number = inner_k,
@@ -671,11 +662,9 @@ train_inner <- function(dat_train, yvar, spec, inner_k, cv_idx, seed_base) {
     }
   )
   if (inherits(fit0, "try-error") || is.null(fit0$bestTune)) return(fit0)
-  
   tr_ctrl2 <- caret::trainControl(method = "none", classProbs = TRUE, summaryFunction = mccSummaryAdaptive)
   base_dat <- if (isTRUE(cfg$adasyn_refit_on_train)) oversample_on_df(dat_train, yvar) else dat_train
   final_dat <- ensure_two_classes(base_dat, yvar)
-  
   rec2 <- if (is_j48_custom) {
     recipes::recipe(stats::as.formula(paste(yvar, "~ .")), data = final_dat) %>%
       step_impute_median(all_numeric_predictors()) %>%
@@ -686,7 +675,6 @@ train_inner <- function(dat_train, yvar, spec, inner_k, cv_idx, seed_base) {
   } else {
     make_recipe(final_dat, yvar, method = spec$method)
   }
-  
   base2 <- list(
     x = rec2, data = final_dat, method = spec$method,
     trControl = tr_ctrl2, metric = "MCC",
@@ -715,17 +703,14 @@ run_holdout <- function(df, yvar, features, algo_name, set_label) {
   if (!nrow(dtrain) || !nrow(dext)) return(NULL)
   dtrain_with_date <- df[row_train, , drop = FALSE]
   seed_base <- seed_for(algo_name, set_label)
-  
   cv_idx <- if (isTRUE(cfg$cv_blocked_by_time)) {
     make_timeblock_indices(dtrain_with_date, k = cfg$inner_k)
   } else {
     make_cv_indices(dtrain[[yvar]], k = cfg$inner_k, seed = seed_base, repeats = effective_repeats())
   }
-  
   old_key <- getOption("enn_log_key", NULL)
   options(enn_log_key = paste(algo_name, set_label, sep = "|"))
   on.exit(options(enn_log_key = old_key), add = TRUE)
-  
   fit <- try(train_inner(dtrain, yvar, spec, cfg$inner_k, cv_idx, seed_base), silent = TRUE)
   if (inherits(fit, "try-error")) {
     message(sprintf("[skip] %s returned error for %s: %s",
@@ -736,10 +721,8 @@ run_holdout <- function(df, yvar, features, algo_name, set_label) {
     message(sprintf("[skip] %s produced no finalModel for %s", algo_name, set_label))
     return(NULL)
   }
-  
   oof <- get_oof_bestTune(fit, pos_label = cfg$pos_label)
   cal_fun <- get_calibrator_from_oof(oof)
-  
   thr_info <- if (!is.null(oof) && nrow(oof)) {
     best_threshold_mcc_bacc_med(oof$obs, cal_fun(oof$p))
   } else {
@@ -749,7 +732,6 @@ run_holdout <- function(df, yvar, features, algo_name, set_label) {
     best_threshold_mcc_bacc_med(dtrain[[yvar]], p_tr)
   }
   thr <- thr_info$t
-  
   p_ex_raw <- try(as.numeric(predict(fit, newdata = dext, type = "prob")[, cfg$pos_label]), silent = TRUE)
   if (inherits(p_ex_raw, "try-error") || all(is.na(p_ex_raw))) return(NULL)
   p_ex <- cal_fun(p_ex_raw)
@@ -762,7 +744,7 @@ run_holdout <- function(df, yvar, features, algo_name, set_label) {
   list(
     obs = factor(dext[[yvar]], levels = c(neg, cfg$pos_label)),
     p = p_ex, pred = pred, threshold = thr,
-    oof = oof # add OOF for band tuning if available
+    oof = oof
   )
 }
 
@@ -851,21 +833,24 @@ apply_cascade_external <- function(tri_res, comp_res, t_low, t_high) {
   pos <- cfg$pos_label; neg <- cfg$neg_label
   defer <- (tri_res$p > t_low & tri_res$p < t_high)
   use_tri <- !defer
-  
   pred_tri <- factor(ifelse(tri_res$p >= tri_res$threshold, pos, neg), levels = c(neg, pos))
   pred_com <- factor(ifelse(comp_res$p >= comp_res$threshold, pos, neg), levels = c(neg, pos))
-  
   pred_final <- ifelse(use_tri, as.character(pred_tri), as.character(pred_com)) %>%
     factor(levels = c(neg, pos))
   p_final <- ifelse(use_tri, tri_res$p, comp_res$p)
-  
-  list(obs = obs, pred = pred_final, p = p_final, defer_rate = mean(defer))
+  list(
+    obs = obs,
+    pred = pred_final,
+    p = p_final,
+    defer_rate = mean(defer),
+    defer_n = sum(defer),
+    n_external = length(defer)
+  )
 }
 
-# ---------------- External summary for heatmap (Complete + Triage + Cascade) ----------------
+# ---------------- External summary for heatmap, Complete Triage Cascade ----------------
 external_summary_for_heatmap_with_cascade <- function(df, yvar, feat_full, feat_triage) {
   specs <- model_specs(cfg$tune_len)
-  
   get_counts <- function(obs, pred) {
     pos <- cfg$pos_label; neg <- cfg$neg_label
     y  <- factor(obs, levels = c(neg, pos))
@@ -878,7 +863,6 @@ external_summary_for_heatmap_with_cascade <- function(df, yvar, feat_full, feat_
       FN = as_num(tab[pos, neg] %||% 0)
     )
   }
-  
   build_all_three <- function(algo) {
     oC <- run_holdout(df, yvar, feat_full,  algo, "Complete")
     oT <- run_holdout(df, yvar, feat_triage, algo, "Triage")
@@ -886,8 +870,7 @@ external_summary_for_heatmap_with_cascade <- function(df, yvar, feat_full, feat_
       message(sprintf("[skip] %s returned NULL for %s", algo, ifelse(is.null(oC), "Complete", "Triage")))
       return(NULL)
     }
-    
-    # 1) Complete & Triage (as-is)
+    # 1) Complete plus Triage
     vC <- compute_metrics_binary(oC$obs, oC$pred, oC$p, pos_label = cfg$pos_label, neg_label = cfg$neg_label)
     vT <- compute_metrics_binary(oT$obs, oT$pred, oT$p, pos_label = cfg$pos_label, neg_label = cfg$neg_label)
     ciC <- bootstrap_ci_all_metrics(oC$obs, oC$pred, oC$p)
@@ -896,8 +879,7 @@ external_summary_for_heatmap_with_cascade <- function(df, yvar, feat_full, feat_
     cntT <- get_counts(oT$obs, oT$pred)
     ciCntC <- bootstrap_ci_counts(oC$obs, oC$pred)
     ciCntT <- bootstrap_ci_counts(oT$obs, oT$pred)
-    
-    # 2) Cascade band tuning on TRIAGE OOF (if available)
+    # 2) Cascade band tuning on TRIAGE OOF
     if (isTRUE(cfg$cascade$enabled)) {
       if (!is.null(oT$oof) && nrow(oT$oof) > 0 && is.finite(oT$threshold)) {
         tuned <- tune_band_from_triage_oof(oT$oof, thr_tri = oT$threshold)
@@ -910,6 +892,9 @@ external_summary_for_heatmap_with_cascade <- function(df, yvar, feat_full, feat_
       ciS <- bootstrap_ci_all_metrics(cas$obs, cas$pred, cas$p)
       cntS <- get_counts(cas$obs, cas$pred)
       ciCntS <- bootstrap_ci_counts(cas$obs, cas$pred)
+      Defer_N     <- cas$defer_n
+      Defer_Rate  <- cas$defer_rate
+      N_external  <- cas$n_external
     } else {
       vS <- c(MCC=NA, AUC=NA, F1=NA, Accuracy=NA, Precision=NA, Sensitivity=NA, Specificity=NA)
       ciS <- list(lwr = setNames(rep(NA,7), c("MCC","AUC","F1","Accuracy","Precision","Sensitivity","Specificity")),
@@ -917,8 +902,10 @@ external_summary_for_heatmap_with_cascade <- function(df, yvar, feat_full, feat_
       cntS <- c(TP=NA, TN=NA, FP=NA, FN=NA)
       ciCntS <- list(lwr = setNames(rep(NA,4), c("TP","TN","FP","FN")),
                      upr = setNames(rep(NA,4), c("TP","TN","FP","FN")))
+      Defer_N    <- NA_integer_
+      Defer_Rate <- NA_real_
+      N_external <- NA_integer_
     }
-    
     tibble::tibble(
       Algorithm   = algo,
       Metric_raw  = c("MCC","AUC","F1","Accuracy","Precision","Sensitivity","Specificity"),
@@ -930,11 +917,11 @@ external_summary_for_heatmap_with_cascade <- function(df, yvar, feat_full, feat_
       Mean_T      = as.numeric(c(vT["MCC"], vT["AUC"], vT["F1"], vT["Accuracy"], vT["Precision"], vT["Sensitivity"], vT["Specificity"])),
       L_T         = as.numeric(ciT$lwr[c("MCC","AUC","F1","Accuracy","Precision","Sensitivity","Specificity")]),
       U_T         = as.numeric(ciT$upr[c("MCC","AUC","F1","Accuracy","Precision","Sensitivity","Specificity")]),
-      # Cascade (S)
+      # Cascade
       Mean_S      = as.numeric(c(vS["MCC"], vS["AUC"], vS["F1"], vS["Accuracy"], vS["Precision"], vS["Sensitivity"], vS["Specificity"])),
       L_S         = as.numeric(ciS$lwr[c("MCC","AUC","F1","Accuracy","Precision","Sensitivity","Specificity")]),
       U_S         = as.numeric(ciS$upr[c("MCC","AUC","F1","Accuracy","Precision","Sensitivity","Specificity")]),
-      # Counts + CIs
+      # Counts plus CIs
       TP_C = cntC["TP"], TN_C = cntC["TN"], FP_C = cntC["FP"], FN_C = cntC["FN"],
       TP_T = cntT["TP"], TN_T = cntT["TN"], FP_T = cntT["FP"], FN_T = cntT["FN"],
       TP_S = cntS["TP"], TN_S = cntS["TN"], FP_S = cntS["FP"], FN_S = cntS["FN"],
@@ -949,10 +936,13 @@ external_summary_for_heatmap_with_cascade <- function(df, yvar, feat_full, feat_
       TP_S_L = ciCntS$lwr["TP"], TP_S_U = ciCntS$upr["TP"],
       TN_S_L = ciCntS$lwr["TN"], TN_S_U = ciCntS$upr["TN"],
       FP_S_L = ciCntS$lwr["FP"], FP_S_U = ciCntS$upr["FP"],
-      FN_S_L = ciCntS$lwr["FN"], FN_S_U = ciCntS$upr["FN"]
+      FN_S_L = ciCntS$lwr["FN"], FN_S_U = ciCntS$upr["FN"],
+      # New: cascade defer summary
+      Defer_N    = Defer_N,
+      Defer_Rate = Defer_Rate,
+      N_external = N_external
     )
   }
-  
   out <- lapply(names(specs), build_all_three)
   out <- Filter(Negate(is.null), out)
   if (length(out) == 0) stop("No algorithms produced results, see [skip] messages above")
@@ -969,15 +959,12 @@ external_summary_for_heatmap_with_cascade <- function(df, yvar, feat_full, feat_
     dplyr::arrange(Algorithm, Metric)
 }
 
-# ---------------- figure (rows: Complete, Triage, Cascade) ----------------
+# ---------------- figure, rows: Complete Triage Cascade ----------------
 plot_external_heatmap <- function(dfw, base_size = 12, family = "sans", digits_label = 4) {
   fmt_val <- function(m, l, u) ifelse(is.na(m), "NA", sprintf("%.4f [%.4f, %.4f]", m, l, u))
   fmt_cnt <- function(n, l, u) sprintf("%d [%d, %d]", as.integer(n), as.integer(round(l)), as.integer(round(u)))
-  
   dfw <- dfw %>% dplyr::mutate(Algorithm = factor(Algorithm, levels = algo_order, ordered = TRUE))
   base_levels <- levels(dfw$Algorithm)
-  
-  # round for tie-safe bolding & get per-(Metric, Set) maxima across algorithms
   df_round <- dfw %>% dplyr::mutate(
     MeanC_r = round(Mean_C, digits_label),
     MeanT_r = round(Mean_T, digits_label),
@@ -991,24 +978,19 @@ plot_external_heatmap <- function(dfw, base_size = 12, family = "sans", digits_l
       MaxS_r = max(MeanS_r, na.rm = TRUE),
       .groups = "drop"
     )
-  
   df_metrics <- df_round %>%
     dplyr::left_join(row_max, by = "Metric") %>%
     dplyr::mutate(
       Label_C = fmt_val(Mean_C, L_C, U_C),
       Label_T = fmt_val(Mean_T, L_T, U_T),
       Label_S = fmt_val(Mean_S, L_S, U_S),
-      # bold highest value for EACH (Metric, Set) across algorithms
       Bold_C  = !is.na(MeanC_r) & (MeanC_r == MaxC_r),
       Bold_T  = !is.na(MeanT_r) & (MeanT_r == MaxT_r),
       Bold_S  = !is.na(MeanS_r) & (MeanS_r == MaxS_r),
       Block   = "metrics"
     )
-  
-  # counts block in order: Complete, Triage, Cascade
   desired_top_order <- c("TP","TN","FP","FN")
   counts_levels <- rev(desired_top_order)
-  
   counts_core <- dfw %>%
     dplyr::distinct(Algorithm,
                     TP_C, TN_C, FP_C, FN_C,
@@ -1018,7 +1000,6 @@ plot_external_heatmap <- function(dfw, base_size = 12, family = "sans", digits_l
                     TP_T_L, TP_T_U, TN_T_L, TN_T_U, FP_T_L, FP_T_U, FN_T_L, FN_T_U,
                     TP_S_L, TP_S_U, TN_S_L, TN_S_U, FP_S_L, FP_S_U, FN_S_L, FN_S_U
     ) %>% dplyr::mutate(Algorithm_chr = as.character(Algorithm)) %>% dplyr::select(-Algorithm)
-  
   mk_count_row <- function(which_label, nC, lC, uC, nT, lT, uT, nS, lS, uS) {
     tidyr::crossing(Algorithm_chr = base_levels) %>%
       dplyr::left_join(counts_core, by = "Algorithm_chr") %>%
@@ -1032,20 +1013,16 @@ plot_external_heatmap <- function(dfw, base_size = 12, family = "sans", digits_l
         Block     = "counts"
       )
   }
-  
   df_counts <- dplyr::bind_rows(
     mk_count_row("TP","TP_C","TP_C_L","TP_C_U","TP_T","TP_T_L","TP_T_U","TP_S","TP_S_L","TP_S_U"),
     mk_count_row("TN","TN_C","TN_C_L","TN_C_U","TN_T","TN_T_L","TN_T_U","TN_S","TN_S_L","TN_S_U"),
     mk_count_row("FP","FP_C","FP_C_L","FP_C_U","FP_T","FP_T_L","FP_T_U","FP_S","FP_S_L","FP_S_U"),
     mk_count_row("FN","FN_C","FN_C_L","FN_C_U","FN_T","FN_T_L","FN_T_U","FN_S","FN_S_L","FN_S_U")
   )
-  
   metric_levels <- levels(dfw$Metric) %||% unique(as.character(dfw$Metric))
   all_levels    <- c(counts_levels, metric_levels)
   df_metrics <- df_metrics %>% dplyr::mutate(Metric = factor(as.character(Metric), levels = all_levels, ordered = TRUE))
   df_counts  <- df_counts  %>% dplyr::mutate(Metric = factor(as.character(Metric), levels = all_levels, ordered = TRUE))
-  
-  # left stub showing set order (Complete, Triage, Cascade)
   stub_df <- dplyr::bind_rows(df_counts %>% dplyr::select(Metric),
                               df_metrics %>% dplyr::select(Metric)) %>%
     dplyr::distinct() %>%
@@ -1056,14 +1033,12 @@ plot_external_heatmap <- function(dfw, base_size = 12, family = "sans", digits_l
       StubMid   = "Triage",
       StubBottom= "Cascade"
     )
-  
   x_levels <- c("Feature set", base_levels)
   y_idx <- sort(unique(as.numeric(stub_df$Metric)))
   y_top <- max(y_idx) + 0.5
   y_bot <- min(y_idx) - 0.5
   seg_dark  <- tibble::tibble(y = c(head(y_idx, -1) + 0.5, y_top, y_bot), x = 0.5, xend = length(x_levels) + 0.5)
   seg_white <- tibble::tibble(y = y_idx, x = 1.5, xend = length(x_levels) + 0.5)
-  
   ggplot2::ggplot(NULL) +
     ggplot2::geom_tile(data = df_metrics, ggplot2::aes(x = Algorithm, y = Metric),
                        fill = "white", color = "white", linewidth = 0.25) +
@@ -1076,7 +1051,6 @@ plot_external_heatmap <- function(dfw, base_size = 12, family = "sans", digits_l
                           linewidth = 0.6, color = "grey20") +
     ggplot2::geom_segment(data = seg_white, ggplot2::aes(x = x, xend = xend, y = y, yend = y),
                           linewidth = 0.6, color = "white") +
-    # metrics labels (Complete, Triage, Cascade stacked in that order)
     ggplot2::geom_text(data = df_metrics,
                        ggplot2::aes(x = Algorithm, y = Metric, label = Label_C,
                                     fontface = ifelse(Bold_C, "bold", "plain")),
@@ -1089,7 +1063,6 @@ plot_external_heatmap <- function(dfw, base_size = 12, family = "sans", digits_l
                        ggplot2::aes(x = Algorithm, y = Metric, label = Label_S,
                                     fontface = ifelse(Bold_S, "bold", "plain")),
                        nudge_y = -0.28, size = 2.9, lineheight = 0.95, family = family) +
-    # count labels (same order; no bolding)
     ggplot2::geom_text(data = df_counts,
                        ggplot2::aes(x = Algorithm, y = Metric, label = Label_C),
                        nudge_y = +0.28, size = 3.0, lineheight = 0.95, family = family) +
@@ -1099,7 +1072,6 @@ plot_external_heatmap <- function(dfw, base_size = 12, family = "sans", digits_l
     ggplot2::geom_text(data = df_counts,
                        ggplot2::aes(x = Algorithm, y = Metric, label = Label_S),
                        nudge_y = -0.28, size = 3.0, lineheight = 0.95, family = family) +
-    # left stub showing set names in order
     ggplot2::geom_text(data = stub_df, ggplot2::aes(x = Algorithm, y = Metric, label = StubTop),
                        nudge_y = +0.28, size = 3.1, lineheight = 0.95, family = family) +
     ggplot2::geom_text(data = stub_df, ggplot2::aes(x = Algorithm, y = Metric, label = StubMid),
@@ -1133,8 +1105,18 @@ ext_df <- external_summary_for_heatmap_with_cascade(df, yvar, feat_full, feat_tr
 p_ext  <- plot_external_heatmap(ext_df)
 print(p_ext)
 
+# ENN summary
 enn_sum <- enn_log_summary()
 print(enn_sum)
 
+# ---- cascade counts, how many are sent to Complete per algorithm ----
+cascade_counts <- ext_df %>%
+  dplyr::distinct(Algorithm, N_external, Defer_N, Defer_Rate) %>%
+  dplyr::arrange(Algorithm) %>%
+  dplyr::mutate(Percent = sprintf("%.1f%%", 100 * Defer_Rate))
+
+print(cascade_counts)
+
+# session info
 si <- utils::sessionInfo()
 print(si)
