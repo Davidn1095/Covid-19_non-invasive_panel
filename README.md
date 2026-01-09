@@ -1,4 +1,4 @@
-# Covid-19_non-invasive_panel
+# conchi_colab
 
 A compact triage-time model for hospital admission risk in acute COVID-19. Code is organized for reproducible figures and tables from RStudio.
 
