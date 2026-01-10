@@ -14,22 +14,45 @@ suppressPackageStartupMessages({
 })
 
 # --------
-# Required objects from your pipeline
+# Pipeline context
 # --------
-stopifnot(exists("df_dev", inherits = TRUE))
-stopifnot(exists("folds", inherits = TRUE))
-stopifnot(exists("algos", inherits = TRUE))
-stopifnot(exists("dev_cache", inherits = TRUE))
-stopifnot(exists("feature_importance_perm_dMCC", inherits = TRUE))
+source(file.path("R", "common_utils.R"))
+source(file.path("R", "cascade_pipeline.R"))
+source(file.path("R", "feature_importance_utils.R"))
 
-stopifnot(exists("run_oof_single_panel", inherits = TRUE))
-stopifnot(exists("best_thr_mcc_at_sens", inherits = TRUE))
-stopifnot(exists("compute_metrics_at_thr", inherits = TRUE))
-stopifnot(exists("best_cascade_params", inherits = TRUE))
-stopifnot(exists("cascade_apply", inherits = TRUE))
-stopifnot(exists("compute_metrics_from_pred", inherits = TRUE))
+ctx <- build_cascade_context()
 
-fi_src <- get("feature_importance_perm_dMCC", inherits = TRUE)
+df_dev <- ctx$df_dev
+folds <- ctx$folds
+algos <- ctx$algos
+dev_cache <- ctx$dev_cache
+clip_q <- ctx$clip_q
+standardise <- ctx$standardise
+use_weights <- ctx$use_weights
+filter_rate <- ctx$filter_rate
+calibration <- ctx$calibration
+thr_grid <- ctx$thr_grid
+sens_min_target <- ctx$sens_min_target
+spec_min_target <- ctx$spec_min_target
+max_def_rate_target <- ctx$max_def_rate_target
+require_sens_ge_spec <- ctx$require_sens_ge_spec
+
+fi_out <- build_feature_importance_perm_dMCC(
+  df_dev = df_dev,
+  df_ext = ctx$df_ext,
+  dev_cache = dev_cache,
+  dev_params_tbl = ctx$dev_params_tbl,
+  algos = algos,
+  clip_q = clip_q,
+  standardise = standardise,
+  use_weights = use_weights,
+  filter_rate = filter_rate,
+  calibration = calibration
+)
+
+feature_importance_perm_dMCC <- fi_out$feature_importance_perm_dMCC
+
+fi_src <- feature_importance_perm_dMCC
 
 policy_col <- if ("Policy" %in% names(fi_src)) "Policy" else if ("Panel" %in% names(fi_src)) "Panel" else NA_character_
 stopifnot(!is.na(policy_col))
@@ -82,55 +105,7 @@ stopifnot(K_noninv >= 1L, K_full >= 1L)
 # --------
 # Pretty x labels (feature-addition axis)
 # --------
-pretty_feature_label <- function(x) {
-  dplyr::case_when(
-    x == "age_raw"        ~ "Age",
-    x == "sex_raw"        ~ "Sex",
-    x == "spo2_raw"       ~ "SpO2",
-    x == "resp_rate_raw"  ~ "Respiratory rate",
-    x == "heart_rate_raw" ~ "Heart rate",
-    x == "temp_raw"       ~ "Temperature",
-    x == "sbp_raw"        ~ "Systolic BP",
-    x == "dbp_raw"        ~ "Diastolic BP",
-    x == "map_raw"        ~ "Mean arterial pressure",
-    
-    x == "shock_index"    ~ "Shock index",
-    x == "pulse_pressure" ~ "Pulse pressure",
-    x == "nlr"            ~ "Neutrophil:lymphocyte ratio",
-    x == "mlr"            ~ "Monocyte:lymphocyte ratio",
-    x == "plr"            ~ "Platelet:lymphocyte ratio",
-    x == "siri"           ~ "Systemic inflammation response index",
-    x == "sii"            ~ "Systemic immune inflammation index",
-    
-    x == "wbc_raw"        ~ "White blood cells",
-    x == "neutrophils_raw"~ "Neutrophils",
-    x == "lymphocytes_raw"~ "Lymphocytes",
-    x == "monocytes_raw"  ~ "Monocytes",
-    x == "platelets_raw"  ~ "Platelets",
-    x == "hemoglobin_raw" ~ "Hemoglobin",
-    x == "creatinine_raw" ~ "Creatinine",
-    x == "urea_raw"       ~ "Urea",
-    x == "sodium_raw"     ~ "Sodium",
-    x == "potassium_raw"  ~ "Potassium",
-    x == "chloride_raw"   ~ "Chloride",
-    x == "anion_gap_raw"  ~ "Anion gap",
-    x == "glucose_raw"    ~ "Glucose",
-    x == "crp_raw"        ~ "CRP",
-    x == "d_dimer_raw"    ~ "D-dimer",
-    x == "ast_raw"        ~ "AST",
-    x == "alt_raw"        ~ "ALT",
-    x == "lactate_raw"    ~ "Lactate",
-    x == "troponin_raw"   ~ "Troponin",
-    
-    TRUE ~ {
-      z <- gsub("_raw$", "", x)
-      z <- gsub("_", " ", z)
-      tools::toTitleCase(z)
-    }
-  )
-}
-
-labels_full <- vapply(order_full, pretty_feature_label, character(1))
+labels_full <- vapply(order_full, pretty_feature_label, character(1), style = "parsimony")
 labels_full <- if (length(labels_full) >= 1L) c(labels_full[1], paste0("+", labels_full[-1])) else character(0)
 
 # --------
@@ -277,6 +252,8 @@ parsimony_tbl <- dplyr::bind_rows(par_rows) %>%
   ) %>%
   dplyr::arrange(.data$Algorithm, .data$Policy, .data$k)
 
+par_plot_df <- parsimony_tbl
+
 print(parsimony_tbl, n = Inf, width = Inf)
 
 # ============================================================
@@ -385,4 +362,3 @@ print(parsimony_plot)
 # parsimony_tbl
 # parsimony_plot
 # order_noninv, order_full
-
