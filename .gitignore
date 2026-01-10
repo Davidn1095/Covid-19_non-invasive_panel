@@ -10,3 +10,20 @@ figs_export/
 *.rds
 *.rda
 cascade project/
+# data and outputs
+data/raw/*
+data/derived/*
+results/*
+
+# allow placeholder files
+!data/raw/README.md
+!data/derived/README.md
+!results/README.md
+
+# R clutter
+.Rhistory
+.RData
+
+# raw data, kept only on the VM
+20260106_development_raw_rowcomplete60.csv
+20260106_external_raw_rowcomplete60.csv
