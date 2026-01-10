@@ -13,6 +13,8 @@ pos_label <- "Yes"
 neg_label <- "No"
 use_class_weights <- TRUE
 
+source(file.path("R", "common_utils.R"))
+
 
 risk_low  <- 0.33
 risk_high <- 0.66
@@ -85,23 +87,6 @@ prep_outcome <- function(x) {
   factor(x, levels = c(neg_label, pos_label))
 }
 
-coerce_numeric_robust <- function(x) {
-  if (is.numeric(x) || is.integer(x)) return(as.numeric(x))
-  x1 <- trimws(as.character(x))
-  x1 <- gsub(",", ".", x1, fixed = TRUE)
-  x1 <- gsub("[^0-9eE\\+\\-\\.]", "", x1)
-  suppressWarnings(as.numeric(x1))
-}
-
-coerce_sex_to_01 <- function(x) {
-  if (is.numeric(x) || is.integer(x)) return(as.numeric(x))
-  x0 <- trimws(tolower(as.character(x)))
-  out <- rep(NA_real_, length(x0))
-  out[x0 %in% c("m","male","man","1")] <- 1
-  out[x0 %in% c("f","female","woman","0")] <- 0
-  out
-}
-
 clamp_na <- function(x, lo, hi, zero_is_na = FALSE) {
   x <- as.numeric(x)
   if (zero_is_na) x[x == 0] <- NA_real_
@@ -119,14 +104,6 @@ mode01 <- function(x) {
   x1 <- x[is.finite(x) & !is.na(x)]
   if (!length(x1)) return(0)
   if (mean(x1 == 1) >= 0.5) 1 else 0
-}
-
-mcc_from_counts <- function(TP, TN, FP, FN) {
-  TP <- as.numeric(TP); TN <- as.numeric(TN); FP <- as.numeric(FP); FN <- as.numeric(FN)
-  num <- (TP * TN) - (FP * FN)
-  den <- sqrt((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN))
-  if (!is.finite(den) || den == 0) return(NA_real_)
-  num / den
 }
 
 auc_fast <- function(score, y01) {
@@ -156,7 +133,7 @@ best_cut_mcc <- function(score, y01) {
     TN <- sum(pred1 == 0 & y01 == 0)
     FP <- sum(pred1 == 1 & y01 == 0)
     FN <- sum(pred1 == 0 & y01 == 1)
-    m <- mcc_from_counts(TP, TN, FP, FN)
+    m <- mcc_from_counts(c(TP = TP, TN = TN, FP = FP, FN = FN))
     if (is.finite(m) && m > best_mcc) {
       best_mcc <- m
       best_cut <- ct
@@ -172,7 +149,7 @@ metrics_from_prob <- function(prob, y01, thr) {
   FP <- sum(pred1 == 1 & y01 == 0)
   FN <- sum(pred1 == 0 & y01 == 1)
   
-  mcc <- mcc_from_counts(TP, TN, FP, FN)
+  mcc <- mcc_from_counts(c(TP = TP, TN = TN, FP = FP, FN = FN))
   prec <- if ((TP + FP) == 0) NA_real_ else TP / (TP + FP)
   sens <- if ((TP + FN) == 0) NA_real_ else TP / (TP + FN)
   spec <- if ((TN + FP) == 0) NA_real_ else TN / (TN + FP)
@@ -612,7 +589,7 @@ metrics_from_score <- function(score, y01, thr) {
   FP <- sum(pred1 == 1 & y01 == 0)
   FN <- sum(pred1 == 0 & y01 == 1)
 
-  mcc <- mcc_from_counts(TP, TN, FP, FN)
+  mcc <- mcc_from_counts(c(TP = TP, TN = TN, FP = FP, FN = FN))
   prec <- if ((TP + FP) == 0) NA_real_ else TP / (TP + FP)
   sens <- if ((TP + FN) == 0) NA_real_ else TP / (TP + FN)
   spec <- if ((TN + FP) == 0) NA_real_ else TN / (TN + FP)
@@ -761,4 +738,3 @@ if (nzchar(ext_path)) {
   cat("\n=== EXTERNAL METRICS (binary by points, MCC cut) ===\n")
   print(metrics_from_score(ext_score_points, y01_ext, cut_mcc_pts$cut), row.names = FALSE)
 }
-
